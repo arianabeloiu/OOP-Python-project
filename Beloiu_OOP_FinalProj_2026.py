@@ -115,10 +115,8 @@ class DNA(Seq):
 
     def __init__(self,sequence,gene,species,geneid,**kwargs):
         super().__init__(sequence,gene,species)
-        self.sequence=re.sub('[^ATGCU]','N',sequence)
+        self.sequence = re.sub('[^ATGCU]', 'N', self.sequence)
         self.geneid=geneid
-        complement={'A':'T','G':'C','C':'G','T':'A'}
-        self.complement=""
  
     def analysis(self):
         gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence))
@@ -127,15 +125,20 @@ class DNA(Seq):
     def print_info(self):
         print(self.geneid + " " + self.species + " " + self.gene + ": " + self.sequence)
 
-    def reverse_complement(self):
-        for base in reversed(self.sequence):
-            self.complement += complement(base, base)
-            return str(self.complement)
+    def reverse_complement(self): 
+        complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A','N':'N'}
+        return "".join(complement.get(base,'N') for base in reversed(self.sequence))
 
-    def six_frames(self):
-        
+    def six_frames(self): 
+        frames = []
+        reverse_complement = self.reverse_complement()
+        for i in range(3):
+            frames.append(self.sequence[i:])
+        for i in range(3):
+            frames.append(reverse_complement[i:]) 
+        return frames
 
-"""
+
 class RNA(DNA):
 
     #def __init__(self):
@@ -152,7 +155,7 @@ class Protein(Seq):
 
     #def mol_weight(self):
 
-"""
+
     
 
 x=DNA("G","tmp","m",000)
