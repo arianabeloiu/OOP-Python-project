@@ -141,11 +141,24 @@ class DNA(Seq):
 
 class RNA(DNA):
 
-    #def __init__(self):
+    def __init__(self,sequence,gene,species,geneid,**kwargs):
+        super().__init__(sequence,gene,species)
         
-    #def make_codons(self):
+        
+    def make_codons(self): 
+        for i in range(0,len(self.sequence),3):
+            codon = self.sequence[i:i+3]
+            self.codons.append(codon)
  
-    #def translate(self):
+    def translate(self):
+        proteins = ""
+        for codon in self.codons:
+            try:
+                aa= standard_code[codon]
+            except:
+                aa = "X"
+            proteins += aa
+        return proteins
 
 class Protein(Seq):
 
