@@ -92,9 +92,10 @@ aa_mol_weights={'A':89.09,'C':121.15,'D':133.1,'E':147.13,'F':165.19,
 class Seq:
 
     def __init__(self,sequence,gene,species):
-        self.sequence=sequence
+        self.sequence=sequence.upper().strip()
         self.gene=gene
         self.species=species
+        self.kmers = [] 
 
     def __str__(self):
         return self.sequence
@@ -103,7 +104,6 @@ class Seq:
         print(self.species + " " + self.gene + ": " + self.sequence)
 
     def make_kmers(self, k=3):
-        self.kmers = [] 
         for i in range(len(self.sequence)-k+1):
             kmer=self.sequence[i:i+k]
             self.kmers.append(kmer)  
