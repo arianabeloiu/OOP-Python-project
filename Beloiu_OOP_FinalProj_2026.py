@@ -115,18 +115,25 @@ class DNA(Seq):
 
     def __init__(self,sequence,gene,species,geneid,**kwargs):
         super().__init__(sequence,gene,species)
-        self.sequence=sequence
+        self.sequence=re.sub('[^ATGCU]','N',sequence)
         self.geneid=geneid
+        complement={'A':'T','G':'C','C':'G','T':'A'}
+        self.complement=""
  
     def analysis(self):
         gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence))
         return gc
 
-#    def print_info(self):
+    def print_info(self):
+        print(self.geneid + " " + self.species + " " + self.gene + ": " + self.sequence)
 
-#    def reverse_complement(self):
+    def reverse_complement(self):
+        for base in reversed(self.sequence):
+            self.complement += complement(base, base)
+            return str(self.complement)
 
-#    def six_frames(self):
+    def six_frames(self):
+        
 
 """
 class RNA(DNA):
