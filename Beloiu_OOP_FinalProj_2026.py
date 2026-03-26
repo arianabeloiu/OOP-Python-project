@@ -107,9 +107,9 @@ class Seq:
         for i in range(len(self.sequence)-k+1):
             kmer=self.sequence[i:i+k]
             self.kmers.append(kmer)  
-        
 
-    #def fasta(self):
+    def fasta(self):
+        return ">" + str(self.species) + "|" + str(self.gene) + "\n" + str(self.sequence)
     
 class DNA(Seq):
 
