@@ -162,9 +162,13 @@ class RNA(DNA):
 
 class Protein(Seq):
 
-    #def __init__:
+    def __init__(self,sequence,gene,species,geneid,**kwargs):
+        super().__init__(sequence,gene,species)
+        self.sequence = re.sub('[^0-9a-zA-Z]+', 'X', self.sequence)
 
-    #def total_hydro(self):
+    def total_hydro(self): 
+        hydro_score = sum(kyte_doolittle.get(aa, 0) for aa in self.sequence)
+        return hydro_score
 
     #def mol_weight(self):
 
