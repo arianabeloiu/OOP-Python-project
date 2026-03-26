@@ -102,7 +102,12 @@ class Seq:
     def print_record(self):
         print(self.species + " " + self.gene + ": " + self.sequence)
 
-    #def make_kmers(self, k=3):
+    def make_kmers(self, k=3):
+        self.kmers = [] 
+        for i in range(len(self.sequence)-k+1):
+            kmer=self.sequence[i:i+k]
+            self.kmers.append(kmer)  
+        
 
     #def fasta(self):
     
