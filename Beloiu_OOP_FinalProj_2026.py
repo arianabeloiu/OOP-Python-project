@@ -170,14 +170,9 @@ class Protein(Seq):
         hydro_score = sum(kyte_doolittle.get(aa, 0) for aa in self.sequence)
         return hydro_score
 
-    #def mol_weight(self):
-
-
-    
+    def mol_weight(self):
+        total_mol_weight = sum(aa_mol_weights.get(aa, 0) for aa in self.sequence)
+        return total_mol_weight
+        
 
 x=DNA("G","tmp","m",000)
-
-
-
-
-
