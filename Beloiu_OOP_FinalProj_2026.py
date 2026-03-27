@@ -65,6 +65,7 @@
 
 import re
 
+#codon table 
 standard_code = {
      "UUU": "F", "UUC": "F", "UUA": "L", "UUG": "L", "UCU": "S",
      "UCC": "S", "UCA": "S", "UCG": "S", "UAU": "Y", "UAC": "Y",
@@ -80,9 +81,11 @@ standard_code = {
      "GCG": "A", "GAU": "D", "GAC": "D", "GAA": "E", "GAG": "E",
      "GGU": "G", "GGC": "G", "GGA": "G", "GGG": "G"}
 
+#hydrophobicity score values 
 kyte_doolittle={'A':1.8,'C':2.5,'D':-3.5,'E':-3.5,'F':2.8,'G':-0.4,'H':-3.2,'I':4.5,'K':-3.9,'L':3.8,
                 'M':1.9,'N':-3.5,'P':-1.6,'Q':-3.5,'R':-4.5,'S':-0.8,'T':-0.7,'V':4.2,'W':-0.9,'X':0,'Y':-1.3}
 
+#amino acid molecular weights 
 aa_mol_weights={'A':89.09,'C':121.15,'D':133.1,'E':147.13,'F':165.19,
                 'G':75.07,'H':155.16,'I':131.17,'K':146.19,'L':131.17,
                 'M':149.21,'N':132.12,'P':115.13,'Q':146.15,'R':174.2,
@@ -100,22 +103,22 @@ class Seq:
         """  
         initalize Seq with sequence, gene, and species
         """
-        self.sequence=sequence.upper().strip() #assign sequence input to sequence, uppercase the sequence + strips the beginning & end of the sequence 
-        self.gene=gene #assign gene input to gene 
-        self.species=species #assign species input to species 
+        self.sequence=sequence.upper().strip() #clean the sequence 
+        self.gene=gene 
+        self.species=species 
         self.kmers = [] #assign kmers to an empty list 
 
     def __str__(self): 
         """
         overload the print function so that it prints the sequence 
         """
-        return self.sequence #prints the sequence 
+        return self.sequence 
 
     def print_record(self): 
         """
         print information about the Sequence 
         """
-        print(self.species + " " + self.gene + ": " + self.sequence) #prints the species, gene and sequence 
+        print(self.species + " " + self.gene + ": " + self.sequence) 
 
     def make_kmers(self, k=3): 
         """
@@ -146,21 +149,21 @@ class DNA(Seq):
         initalize DNA with the same parameters as the Seq class + geneid
         """
         super().__init__(sequence,gene,species) #use super to inherit the previous methods from Seq class 
-        self.sequence = re.sub('[^ATGCU]', 'N', self.sequence) #assign sequence input to sequence + use regex package to substitute any character that's not ATGCU as N
-        self.geneid=geneid #assign geneid input to gene id
+        self.sequence = re.sub('[^ATGCU]', 'N', self.sequence) #substitute any character that's not ATGCU as N
+        self.geneid=geneid 
  
     def analysis(self): 
         """ 
         find the GC counts 
         """
-        gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence)) #use regex package to get the sum of G's and C's in the sequence 
-        return gc #print the result
+        gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence)) #get the sum of G's and C's in the sequence 
+        return gc 
 
     def print_info(self): 
         """ 
         print information about the DNA 
         """
-        print(self.geneid + " " + self.species + " " + self.gene + ": " + self.sequence) #prints out the geneid, species name, gene, and sequence 
+        print(self.geneid + " " + self.species + " " + self.gene + ": " + self.sequence) 
 
     def reverse_complement(self):  
         """ 
@@ -174,15 +177,15 @@ class DNA(Seq):
         finds 6 frames of the sequence (3 from the forward sequence, 3 from the reverse complement 
         """
         frames = [] #create an empty list called frames 
-        reverse_complement = self.reverse_complement() #assigns reverse complement input to be the reverse complement of the sequence 
+        reverse_complement = self.reverse_complement() #assigns reverse_complement to the reverse complement of the sequence
 
         #get the first 3 frames from the forward sequence 
         for i in range(3): 
-            frames.append(self.sequence[i:]) 
+            frames.append(self.sequence[i:]) #add it to the frames list 
 
         #get the first 3 frames from the reverse complement
         for i in range(3): 
-            frames.append(reverse_complement[i:]) 
+            frames.append(reverse_complement[i:]) #add it to the frames list 
         return frames #print all the 6 frames 
 
 
@@ -195,7 +198,7 @@ class RNA(DNA):
         """
         initialize RNA class with the same parameters as the DNA class 
         """
-        super().__init__(sequence,gene,species) #use super to inherit the previous methods from the DNA class 
+        super().__init__(sequence,gene,species,geneid) #use super to inherit the previous methods from the DNA class 
         self.sequence = re.sub('T','U',self.sequence) #replace every T base with a U 
         self.codons = [] #assign codons to an empty list 
         
@@ -211,15 +214,15 @@ class RNA(DNA):
         """
         translate the RNA sequence into amino acids 
         """
-        protein = "" #assign proteins to an empty string 
-        for codon in self.codons: #iterate through each codons in the codons list  
+        protein = "" 
+        for codon in self.codons:   
             #use a try & except to translate the codons into amino acids 
             try:
-                aa= standard_code[codon] #use the dictionary to get the corresponding amino acid 
+                aa= standard_code[codon] #match codons with the corresponding amino acid 
             except:
                 aa = "X" #if the pattern doesn't exist in the dictionary, denote it as X 
-            protein += aa #add the amino acid to the protein string 
-        return protein #print out the protein sequence 
+            protein += aa #add to the protein string 
+        return protein 
 
 class Protein(Seq):
     """
@@ -230,18 +233,21 @@ class Protein(Seq):
         """
         initialize the Protein class with the same parameters as the Seq class
         """
-        super().__init__(sequence,gene,species) #use super() to inherit the previous methods from the Seq class 
-        self.sequence = re.sub('[^0-9a-zA-Z]+', 'X', self.sequence) #use the regex package to substitute any non LETTER characters in the sequence into an 'X'
+        super().__init__(sequence,gene,species) #use super to inherit the previous methods from the Seq class
+        self.sequence = re.sub('[^0-9a-zA-Z]+', 'X', self.sequence) #sub any non LETTER characters in the sequence into an 'X'
 
     def total_hydro(self):  
         """ 
         calculate the total hydrophobicity score
         """
-        hydro_score = sum(kyte_doolittle.get(aa, 0) for aa in self.sequence) #sum the hydrophobicity values for all amino acids in the sequence
+        hydro_score = sum(kyte_doolittle.get(aa, 0) for aa in self.sequence) #use the kyte-doolittle dictionary to calculate the sum of the scores
         return hydro_score 
 
-    def mol_weight(self):
-        total_mol_weight = sum(aa_mol_weights.get(aa, 0) for aa in self.sequence) #sum the total molecular weight 
+    def mol_weight(self): 
+        """
+        calculate the total molecular weight
+        """
+        total_mol_weight = sum(aa_mol_weights.get(aa, 0) for aa in self.sequence) #use the molecular weights dictionary to calculate the sum of the scores 
         return total_mol_weight
         
 
