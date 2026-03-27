@@ -106,7 +106,7 @@ class Seq:
         self.sequence=sequence.upper().strip() #clean the sequence 
         self.gene=gene 
         self.species=species 
-        self.kmers = [] #assign kmers to an empty list 
+        self.kmers = [] #assign kmers to an empty list  
 
     def __str__(self): 
         """
@@ -132,7 +132,20 @@ class Seq:
         """ 
         print out information in fasta format
         """
-        return ">" + str(self.species) + " " + str(self.gene) + "\n" + str(self.sequence)
+        return ">" + str(self.species) + "|" + str(self.gene) + "\n" + str(self.sequence)  
+
+    def len(self):
+        """ 
+        operator overload the length of the sequence to print the sequence length: + len(seq)
+        """
+        return str(len(self.sequence))
+
+    def length(self): 
+        """ 
+        sort-of an add-on the length sequence where it will print the sequence length, but denotes that it is the sequence length 
+        """
+        seq_length = len(self.sequence) #get the sequence length and assign it to seq length 
+        return "Sequence Length" + ":" + str(seq_length)
     
 class DNA(Seq):
 
@@ -150,7 +163,8 @@ class DNA(Seq):
         """
         super().__init__(sequence,gene,species) #use super to inherit the previous methods from Seq class 
         self.sequence = re.sub('[^ATGCU]', 'N', self.sequence) #substitute any character that's not ATGCU as N
-        self.geneid=geneid 
+        self.geneid=geneid  
+        self.count=0 #assigns count to 0 
  
     def analysis(self): 
         """ 
@@ -186,7 +200,18 @@ class DNA(Seq):
         #get the first 3 frames from the reverse complement
         for i in range(3): 
             frames.append(reverse_complement[i:]) #add it to the frames list 
-        return frames #print all the 6 frames 
+        return frames #print all the 6 frames    
+
+    def count_unknowns(self): 
+        """  
+        search the DNA sequence for gaps & unknown nucleotides 
+        """ 
+        for base in self.sequence: #iterates through the base
+            if base == "N" or base == "X" or base == "?" or base == "-" or base == " ": 
+                self.count += 1 #adds to the count 
+            else: #if it is not located, move onto the next base 
+                pass 
+        return "Amount of unknowns in the sequence:" + str(self.count)
 
 
 class RNA(DNA):
@@ -234,7 +259,8 @@ class Protein(Seq):
         initialize the Protein class with the same parameters as the Seq class
         """
         super().__init__(sequence,gene,species) #use super to inherit the previous methods from the Seq class
-        self.sequence = re.sub('[^0-9a-zA-Z]+', 'X', self.sequence) #sub any non LETTER characters in the sequence into an 'X'
+        self.sequence = re.sub('[^0-9a-zA-Z]+', 'X', self.sequence) #sub any non LETTER characters in the sequence into an 'X' 
+        self.count = 0 #assign count to 0 
 
     def total_hydro(self):  
         """ 
@@ -248,7 +274,18 @@ class Protein(Seq):
         calculate the total molecular weight
         """
         total_mol_weight = sum(aa_mol_weights.get(aa, 0) for aa in self.sequence) #use the molecular weights dictionary to calculate the sum of the scores 
-        return total_mol_weight
+        return total_mol_weight 
+
+    def prot_unknowns(self): 
+        """ 
+        searches the gaps & unknown amino acids 
+        """
+        for base in self.sequence: #iterates through the base
+            if base == "X" or base == "?" or base == "-" or base == " ": #if the base is a gap, ?, or a unknown amino acid 
+                self.count += 1 #adds to the count 
+            else: #if it is not located, move onto the next base 
+                pass 
+        return "Amount of unknowns in the sequence:" + str(self.count)
         
 
 x=DNA("G","tmp","m",000)
