@@ -132,7 +132,7 @@ class Seq:
         """ 
         print out information in fasta format
         """
-        return ">" + str(self.species) + "|" + str(self.gene) + "\n" + str(self.sequence)
+        return ">" + str(self.species) + " " + str(self.gene) + "\n" + str(self.sequence)
     
 class DNA(Seq):
 
