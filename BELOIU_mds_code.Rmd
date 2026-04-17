@@ -1,0 +1,157 @@
+---
+title: "Analysis of periodontal bacteria in relation to disease status and pocket depth"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+The following notebook performs multidimensional scaling with the bacterial relative 
+abundance data from PerioData.csv
+The notebook follows the code from:
+https://environmentalcomputing.net/graphics/multivariate-vis/mds/
+
+
+```{r}
+library(vegan)
+library(ggplot2)
+```
+
+
+### Read Data
+
+Make data frame from the periodontal data file PerioData.csv
+```{r}
+perio <- read.csv("PerioData.csv")
+head(perio)
+```
+Subset the perio data to only have bacterial columns. 
+The next block performs non-metric multidimentional scaling (NMDS) using bray-curtis distances of the bacterial relative abundances.
+The plot shows all the samples ordinated on this first two axes, MDS1 and MDS2.
+
+```{r}
+bacteria <- perio[2:6]
+#head(bacteria)
+bacteria.mds <- metaMDS(comm = bacteria, distance = "bray", trace = FALSE, autotransform = FALSE)
+plot(bacteria.mds$points)
+```
+This block assigns the metadata to the samples in the plot, then the ggplot colors the points in the graph for one variable, in this case disease status.
+
+```{r}
+bacteria_xy <- data.frame(bacteria.mds$points)
+bacteria_xy$status <- perio$status #disease status 1=not disease; 2=diseased
+bacteria_xy$time <- perio$time     #time point
+bacteria_xy$range <- perio$range   #range of pocket depth shallow < 3mm, middle 3-3.9, deep 4+ 
+
+ggplot(bacteria_xy, aes(MDS1, MDS2, color = status)) +
+  geom_point() +
+  theme_bw()
+```
+Finally, this block performs a PERMANOVA statistical analysis. This is an ANOVA using distance matrices that uses permutations to ask if the samples group clusters are the same or not. In effect, for this next test, we are asking if there is a difference between the beta diversity of the samples based on disease status.
+
+Here is the full formula for the adnonis2 function that runs the PERMANOVA. By default it performs 999 permutation and uses bray curtis distances. 
+adonis2(formula, data, permutations = 999, method = "bray",
+    sqrt.dist = FALSE, add = FALSE, by = NULL,
+    parallel = getOption("mc.cores"), na.action = na.fail,
+    strata = NULL, ...)
+
+```{r}
+adonis2(bacteria ~ perio$status) # is there a significant different in the samples base on status?
+
+```
+
+There is no significant difference between the samples based upon the status because the p-value = 0.344. 
+
+EXERCISE 1: Run the same plots and PERMANOVA using the other two variables: time and range
+
+```{r} 
+#looks at the time instead of status for the plot 
+ggplot(bacteria_xy, aes(MDS1, MDS2, color = factor(time))) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(color = "Time Point") 
+
+#looks at the range for the plot 
+ggplot(bacteria_xy, aes(MDS1, MDS2, color = factor(range))) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(color = "Pocket Depth Range")
+```
+
+Conduct the PERMANOVA test 
+
+```{r}
+adonis2(bacteria ~ time, data = perio, method = "bray") #looks at time only  
+adonis2(bacteria ~ range, data = perio, method = "bray") #looks at range only 
+adonis2(bacteria ~ time + range, data = perio, method = "bray") # looks at both time + range 
+```
+
+Time alone does not impact the % of bacteria present (p = 0.138). The relationship with time + range does impact the % of bacteria present (p < 0.05), however since time alone does not impact the % of bacteria present, it could be heavily impacted by the range, which by itself does impact the % of bacteria present (p < 0.05). 
+
+EXERCISE 2: REPEAT the analyses above after rclr transformation of the bacteria data.
+
+Step 1) convert to rclr - zeros replaced with minimum values
+Step 2) run the mds with method="euclidean" and plot with the same variables
+Step 3) run the adonis2 with euclidean distances and 9999 permutations
+
+Step 1: 
+
+```{r}
+bacteria <- perio[, c("strep", "prev", "lepto", "fuso", "veil")] #pull all the bacteria columns 
+rclr_transform <- decostand(bacteria, method = "rclr") #robust clr transform  
+column_names <- c("rclr_strep","rclr_prev","rclr_lepto",
+                                     "rclr_fuso", "rclr_veil") #create the column names 
+colnames(rclr_transform) <- column_names #rename the column names 
+head(rclr_transform) #check the data  
+perio <- cbind(perio,rclr_transform) #add rclr_transform to the perio data 
+head(perio) #check the data 
+```
+
+Step 2: 
+
+```{r}
+rclr_bacteria <- perio[12:16] #select the rclr transformed data 
+
+bacteria.mds <- metaMDS(comm = rclr_bacteria, distance = "euclidean", trace = FALSE, autotransform = FALSE)  #calculating the mds with euclidean distance + rclr_bacteria 
+
+
+bacteria_xy <- data.frame(bacteria.mds$points)
+bacteria_xy$status <- as.factor(perio$status) #disease status 1=not disease; 2=diseased
+bacteria_xy$time <- perio$time #time point
+bacteria_xy$range <- perio$range #range of pocket depth shallow < 3mm, middle 3-3.9, deep 4+
+
+```
+
+```{r}
+#looks at the status 
+ggplot(bacteria_xy, aes(x = MDS1, y = MDS2, color = status)) + #assign variables
+  geom_point(size = 3) + #create scatter plot
+  theme_bw() #denote theme 
+```
+
+```{r}
+#looks at the time instead of status for the plot 
+ggplot(bacteria_xy, aes(x = MDS1, y = MDS2, color = time)) + #assign variables
+  geom_point(size = 3) + #create scatter plot
+  theme_bw() #denote theme 
+
+#looks at range instead of status for the plot 
+ggplot(bacteria_xy, aes(x = MDS1, y = MDS2, color = range)) + #assign variables
+  geom_point(size = 3) + #creates the scatter plot
+  theme_bw() #denote the theme 
+```
+
+
+Step 3: 
+
+```{r} 
+#create a distance matrix for the PERMANOVA 
+dist <- dist(rclr_bacteria, method = "euclidean") #use the rclr data 
+
+#run the PERMANOVA utilizing euclidean distances and 9999 permutations
+adonis2(dist ~ status, data = perio, permutations = 9999) #looking only at status  
+adonis2(dist ~ time, data = perio, permutations = 9999) #looking only at time
+adonis2(dist ~ range, data = perio, permutations = 9999) #looking only at range 
+adonis2(dist ~ time + range, data = perio, permutations = 9999) #looking at time + range
+```
+

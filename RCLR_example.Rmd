@@ -1,0 +1,55 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+## RCLR Standardization, followed by imputation
+
+```{r}
+library(vegan)
+```
+
+
+### Read Data
+
+Make data frame from toy_data.csv file
+```{r}
+df_toy_data <- read.csv("toy_data.csv", row.names = 1)
+head(df_toy_data)
+```
+### RCLR transformation w/o imputation
+
+Use the non-vegan decostand with impute set to FALSE
+All the zeros will be replaced with NA
+```{r}
+df_toy_data.rclr <- decostand(df_toy_data, "rclr", impute = FALSE)
+head(df_toy_data.rclr)
+```
+### Replace NAs
+
+Replace the NAs with zeros (prior to minimum value substitution)
+```{r}
+##Replace NA with 0
+df_toy_data.rclr[is.na(df_toy_data.rclr)] <- 0
+head(df_toy_data.rclr)
+```
+
+### Determine min value
+
+Find the minimum value of the dataset:
+```{r}
+toy_data_rclr_min_value <- min(df_toy_data.rclr)
+toy_data_rclr_min_value
+```
+
+## Replace 0 with min value
+
+```{r}
+df_toy_data_rclr_min_sub = df_toy_data.rclr # Copy the data
+
+df_toy_data_rclr_min_sub[df_toy_data_rclr_min_sub == 0] = toy_data_rclr_min_value
+head(df_toy_data_rclr_min_sub)
+
+```
+
+
+

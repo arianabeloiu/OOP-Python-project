@@ -1,0 +1,4 @@
+prot1:RLGV
+prot2:VVYW
+DNA3:FPRL
+DNA4:RLQY

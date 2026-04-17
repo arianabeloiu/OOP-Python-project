@@ -1,0 +1,81 @@
+---
+title: "Analysis of periodontal bacteria in relation to disease status and pocket depth"
+output: html_notebook
+---
+The following notebook performs multidimensional scaling with the bacterial relative 
+abundance data from PerioData.csv
+The notebook follows the code from:
+https://environmentalcomputing.net/graphics/multivariate-vis/mds/
+
+
+```{r}
+library(vegan)
+library(ggplot2)
+```
+
+
+### Read Data
+
+Make data frame from the periodontal data file PerioData.csv
+```{r}
+perio <- read.csv("PerioData.csv")
+head(perio)
+```
+Subset the perio data to only have bacterial columns. 
+The next block performs non-metric multidimentional scaling (NMDS) using bray-curtis distances of the bacterial relative abundances.
+The plot shows all the samples ordinated on this first two axes, MDS1 and MDS2.
+
+```{r}
+bacteria <- perio[2:6]
+#head(bacteria)
+bacteria.mds <- metaMDS(comm = bacteria, distance = "bray", trace = FALSE, autotransform = FALSE)
+plot(bacteria.mds$points)
+```
+This block assigns the metadata to the sampes in the plot, then the ggplot colors the points in the graph for one variable, in this case disease status.
+
+```{r}
+bacteria_xy <- data.frame(bacteria.mds$points)
+bacteria_xy$status <- perio$status #disease status 1=not disease; 2=diseased
+bacteria_xy$time <- perio$time     #time point
+bacteria_xy$range <- perio$range   #range of pocket depth shallow < 3mm, middle 3-3.9, deep 4+ 
+
+ggplot(bacteria_xy, aes(MDS1, MDS2, color = status)) +
+  geom_point() +
+  theme_bw()
+```
+Finally, this block performs a PERMANOVA statistical analysis. This is an ANOVA using distance matrices that uses permutations to ask if the samples group clusters are the same or not. In effect, for this next test, we are asking if there is a difference between the beta diversity of the samples based on disease status.
+
+Here is the full formula for the adnonis2 function that runs the PERMANOVA. By default it performs 999 permutation and uses bray curtis distances. 
+adonis2(formula, data, permutations = 999, method = "bray",
+    sqrt.dist = FALSE, add = FALSE, by = NULL,
+    parallel = getOption("mc.cores"), na.action = na.fail,
+    strata = NULL, ...)
+
+```{r}
+adonis2(bacteria ~ perio$status) # is there a significant different in the samples base on status?
+
+```
+
+No, there is not a significant difference between the samples based on the disease status (p = 0.31). 
+
+EXERCISE 1: Run the same plots and PERMANOVA using the other two variables: time and range
+
+```{r}
+
+adonis2(bacteria ~ perio$time + perio$range) #run the PERMANOVA looking 
+
+```
+
+
+EXERCISE 2: REPEAT the analyses above after rclr transformation of the bacteria data.
+
+Step 1) convert to rclr - zeros replaced with minimum values
+Step 2) run the mds with method="euclidean" and plot with the same variables
+Step 3) run the adonis2 with euclidean distances and 9999 permutations
+
+
+```{r}
+
+```
+
+EXERCISE 3: 

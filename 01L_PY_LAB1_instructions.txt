@@ -1,0 +1,11 @@
+Part 1) Tutorials:
+Go through this Pandas tutorial:
+https://www.learndatasci.com/tutorials/python-pandas-tutorial-complete-introduction-for-beginners/
+
+Part 2) Jupyter Notebook with pandas and scipy
+
+Run the PandasScipyPractice.ipynb with hist_taxa_treat.txt
+Answer the questions in the Notebook. 
+
+
+

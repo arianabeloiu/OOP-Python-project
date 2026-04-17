@@ -101,7 +101,7 @@ class Seq:
 
     def __init__(self,sequence,gene,species): 
         """  
-        initalize Seq with sequence, gene, and species
+        initalize Seq with sequence, gene, and species  
         """
         self.sequence=sequence.upper().strip() #clean the sequence 
         self.gene=gene 
@@ -122,7 +122,12 @@ class Seq:
 
     def make_kmers(self, k=3): 
         """
-        find all the overlapping k-mers in the sequence, with a default k-mer size = 3. 
+        find all the overlapping k-mers in the sequence, with a default k-mer size = 3.  
+        
+        >>> seq = Seq("AGTGC", "TEST", "test")
+        >>> seq.make_kmers()
+        >>> seq.kmers
+        ['AGT', 'GTG', 'TGC']
         """
         for i in range(len(self.sequence)-k+1): #iterate through the sequence, extracting k-mers of length k 
             kmer=self.sequence[i:i+k] #slice the sequence up until the length of the k-mer size 
@@ -143,6 +148,10 @@ class Seq:
     def length(self): 
         """ 
         sort-of an add-on the length sequence where it will print the sequence length, but denotes that it is the sequence length 
+
+        >>> seq = Seq("AGAGTGGAGTGAGAGTGCGAGTGC", "TEST", "test")
+        >>> seq.length()
+        'Sequence Length:24'
         """
         seq_length = len(self.sequence) #get the sequence length and assign it to seq length 
         return "Sequence Length" + ":" + str(seq_length)
@@ -168,7 +177,11 @@ class DNA(Seq):
  
     def analysis(self): 
         """ 
-        find the GC counts 
+        find the GC counts  
+        
+        >>> dna = DNA("atgGTAGCgTg","my_dna","DNA","0100")
+        >>> dna.analysis()
+        6
         """
         gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence)) #get the sum of G's and C's in the sequence 
         return gc 
@@ -204,10 +217,14 @@ class DNA(Seq):
 
     def count_unknowns(self): 
         """  
-        search the DNA sequence for gaps & unknown nucleotides 
+        search the DNA sequence for gaps & unknown nucleotides  
+
+        >>> dna = DNA("atgGTAGCgTg","my_dna","DNA","0100") 
+        >>> dna.count_unknowns()
+        'Amount of unknowns in the sequence:0'
         """ 
         for base in self.sequence: #iterates through the base
-            if base == "N" or base == "X" or base == "?" or base == "-" or base == " ": 
+            if re.findall("X?N-",self.sequence):
                 self.count += 1 #adds to the count 
             else: #if it is not located, move onto the next base 
                 pass 
@@ -252,7 +269,7 @@ class RNA(DNA):
 class Protein(Seq):
     """
     This class will inherit all the functions of the Seq class +
-    calculate the total hydrophobicity and total molecular weight of the protein sequence
+    calculate the total hydrophobicity and total molecular weight of the protein sequence 
     """
     def __init__(self,sequence,gene,species,geneid,**kwargs): 
         """
@@ -280,12 +297,16 @@ class Protein(Seq):
         """ 
         searches the gaps & unknown amino acids 
         """
-        for base in self.sequence: #iterates through the base
-            if base == "X" or base == "?" or base == "-" or base == " ": #if the base is a gap, ?, or a unknown amino acid 
+        for i in self.sequence: #iterates through the base
+            if re.search("[^ABCDEFGHIKLMNPQRSTVWYZ]", self.sequence): #searches for everything that is NOT the amino acids 
                 self.count += 1 #adds to the count 
             else: #if it is not located, move onto the next base 
                 pass 
         return "Amount of unknowns in the sequence:" + str(self.count)
         
 
-x=DNA("G","tmp","m",000)
+x=DNA("G","tmp","m",000) 
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
