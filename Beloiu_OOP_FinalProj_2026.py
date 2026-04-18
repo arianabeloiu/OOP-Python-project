@@ -105,8 +105,8 @@ class Seq:
         """
         self.sequence=sequence.upper().strip() #clean the sequence 
         self.gene=gene 
-        self.species=species 
-        self.kmers = [] #assign kmers to an empty list  
+        self.species=species  
+        self.kmers = []
 
     def __str__(self): 
         """
@@ -128,8 +128,14 @@ class Seq:
         >>> seq.make_kmers()
         >>> seq.kmers
         ['AGT', 'GTG', 'TGC']
+
+        >>> seq = Seq("AGAGTGGAGTGAGAGTGCGAGTGC","TEST","test")  
+        >>> seq.make_kmers()
+        >>> seq.kmers
+        ['AGA', 'GAG', 'AGT', 'GTG', 'TGG', 'GGA', 'GAG', 'AGT', 'GTG', 'TGA', 'GAG', 'AGA', 'GAG', 'AGT', 'GTG', 'TGC', 'GCG', 'CGA', 'GAG', 'AGT', 'GTG', 'TGC']
         """
-        for i in range(len(self.sequence)-k+1): #iterate through the sequence, extracting k-mers of length k 
+        self.kmers = [] #assign kmers to an empty list  
+        for i in range(len(self.sequence)-k+1): #iterate through the sequence, extracting k-mers of length k
             kmer=self.sequence[i:i+k] #slice the sequence up until the length of the k-mer size 
             self.kmers.append(kmer) #append to an empty list
 
@@ -152,6 +158,10 @@ class Seq:
         >>> seq = Seq("AGAGTGGAGTGAGAGTGCGAGTGC", "TEST", "test")
         >>> seq.length()
         'Sequence Length:24'
+
+        >>> seq = Seq("AGTC", "TEST", "test")
+        >>> seq.length()
+        'Sequence Length:4'
         """
         seq_length = len(self.sequence) #get the sequence length and assign it to seq length 
         return "Sequence Length" + ":" + str(seq_length)
@@ -182,6 +192,14 @@ class DNA(Seq):
         >>> dna = DNA("atgGTAGCgTg","my_dna","DNA","0100")
         >>> dna.analysis()
         6
+
+        >>> dna = DNA("AAAATTTTGTTTTTTAA","my_dna","DNA","0200")
+        >>> dna.analysis()
+        1
+        
+        >>> dna = DNA("atatTtAaAa","my_dna","DNA","0300")
+        >>> dna.analysis()
+        0
         """
         gc=len(re.findall('G',self.sequence) + re.findall('C',self.sequence)) #get the sum of G's and C's in the sequence 
         return gc 
@@ -217,14 +235,19 @@ class DNA(Seq):
 
     def count_unknowns(self): 
         """  
-        search the DNA sequence for gaps & unknown nucleotides  
-
+        search the DNA sequence for gaps & unknown nucleotides in the sequence 
+        
         >>> dna = DNA("atgGTAGCgTg","my_dna","DNA","0100") 
         >>> dna.count_unknowns()
         'Amount of unknowns in the sequence:0'
+
+        >>> dna = DNA("atgGac-NGtcgaXg","my_dna","DNA","0100") 
+        >>> dna.count_unknowns()
+        'Amount of unknowns in the sequence:3'
         """ 
+        self.count = 0
         for base in self.sequence: #iterates through the base
-            if re.findall("X?N-",self.sequence):
+            if re.search("[^AGTCU]", base): #searches for everything that is NOT a nucleotide
                 self.count += 1 #adds to the count 
             else: #if it is not located, move onto the next base 
                 pass 
@@ -248,9 +271,11 @@ class RNA(DNA):
         """
         get the codons from the sequence 
         """
+        self.codons = []
         for i in range(0,len(self.sequence),3): #iterate through the sequence skipping by 3s 
-            codon = self.sequence[i:i+3] #splice the sequence by every 3 bases 
-            self.codons.append(codon) #add the codons to the empty codons list 
+            codon = self.sequence[i:i+3] #splice the sequence by every 3 bases  
+            if len(codon) == 3:
+                self.codons.append(codon) #add the codons to the empty codons list 
  
     def translate(self): 
         """
@@ -297,13 +322,13 @@ class Protein(Seq):
         """ 
         searches the gaps & unknown amino acids 
         """
-        for i in self.sequence: #iterates through the base
-            if re.search("[^ABCDEFGHIKLMNPQRSTVWYZ]", self.sequence): #searches for everything that is NOT the amino acids 
+        self.count = 0
+        for amino_acid in self.sequence: #iterates through the base
+            if re.search("[^ABCDEFGHIKLMNPQRSTVWYZ]", amino_acid): #searches for everything that is NOT the amino acids 
                 self.count += 1 #adds to the count 
             else: #if it is not located, move onto the next base 
                 pass 
         return "Amount of unknowns in the sequence:" + str(self.count)
-        
 
 x=DNA("G","tmp","m",000) 
 
