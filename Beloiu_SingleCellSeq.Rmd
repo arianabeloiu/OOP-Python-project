@@ -1,0 +1,325 @@
+---
+title: "Beloiu_SingleCellSeq"
+author: "Ariana Beloiu"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#load the necessary packages 
+library(Seurat) 
+library(dplyr) 
+library(patchwork) 
+library(ggplot2)
+```
+
+```{r}
+# Load the PBMC dataset
+pbmc.data <- Read10X(data.dir = "filtered_gene_bc_matrices/hg19/")
+# Initialize the Seurat object with the raw (non-normalized data).
+pbmc <- CreateSeuratObject(counts = pbmc.data, project = "pbmc3k", min.cells = 3, min.features = 200)
+pbmc
+```
+
+What does the data in a count matrix look like? 
+
+```{r}
+# Lets examine a few genes in the first thirty cells
+pbmc.data[c("CD3D", "TCL1A", "MS4A1"), 1:30]
+```
+
+Seurat uses a sparse-matrix representation whenever possible due to the 0 values. 
+
+```{r}
+dense.size <- object.size(as.matrix(pbmc.data)) #utilizes a matrix to get the size 
+dense.size
+```
+
+```{r}
+sparse.size <- object.size(pbmc.data) #gets a sparse matrix 
+sparse.size
+```
+
+```{r}
+dense.size/sparse.size
+```
+
+
+## QC and selecting cells for further analysis 
+
+QCC metrics are used to find the # of unique genes detected in each cell and the total number of molecules detected within each cell (correlates strongly with unique genes), and the % of reads that map to the mitochondrial genome. 
+
+```{r}
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+pbmc[["percent.mt"]] <- PercentageFeatureSet(pbmc, pattern = "^MT-")
+```
+
+Where are the QC metrics stored? 
+
+They are stored in the object meta data 
+
+```{r}
+# Show QC metrics for the first 5 cells
+head(pbmc@meta.data, 5)
+```
+
+```{r}
+# Visualize QC metrics as a violin plot
+VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+We filter cells that have unique feature counts over 2,500 or less than 200 and then we filter cells that have >5% mitochondrial counts. 
+```{r}
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+
+plot1 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "percent.mt") #generate a scatter plot looking at the percent mt
+plot2 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") #generate a scatter plot looking at the Feature RNA 
+plot1 + plot2
+```
+
+```{r}
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5) #visualize the QC metrics 
+```
+
+We now see how to filter based upon the QC metrics. 
+
+## Normalize the data 
+
+```{r}
+pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000) #normalize the data via log-transforming the data and scaling the data 
+```
+
+```{r}
+pbmc <- NormalizeData(pbmc) #does the same thing as the previous line but utilizes default values 
+```
+
+Global-scaling relies on an assumption that each cell originally contains the same number of RNA molecules. 
+
+## Identification of highly variable features (feature selection) 
+
+We need to calculate a subset of features that have a high cell to cell variation in the dataset (i.e. highly expressed in some cells and lowly expressed in others).  
+
+FindVariableFeatures() aiods in modeling the mean-variance relationship in the single-cell data. 
+
+```{r}
+pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(pbmc), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(pbmc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+```
+
+The default is 2,000 features per dataset and can be used in downstream analysis like PCA.  
+
+## Scaling the data 
+
+ScaleData() will: 
+
+- Shifts the expression of each gene, so that the mean expression across cells is 0
+- Scales the expression of each gene, so that the variance across cells is 1 
+  - This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate 
+- The results of this are stored in pbmc[["RNA"]]$scale.data 
+- By default, only variable features are scaled. 
+- You can specify the features argument to scale additional features 
+
+```{r}
+all.genes <- rownames(pbmc) #denotes the genes 
+pbmc <- ScaleData(pbmc, features = all.genes) #scales the data 
+```
+
+You can remove unwanted sources of variation by adding more information to scaledata(). Like 'regressing out' heterogeneity associated with cell cycle stage or mitochondrial contamination 
+
+```{r}
+pbmc <- ScaleData(pbmc, vars.to.regress = "percent.mt")
+```
+
+## Perform linear dimensional reduction  
+
+We want to perform a PCA on the scaled data 
+
+```{r}
+pbmc <- RunPCA(pbmc, features = VariableFeatures(object = pbmc)) #run the PCA
+```
+
+```{r}
+# Examine and visualize PCA results a few different ways
+print(pbmc[["pca"]], dims = 1:5, nfeatures = 5) #print the dimensions of each PC  
+
+VizDimLoadings(pbmc, dims = 1:2, reduction = "pca") #visualize top genes associated with reduction components 
+
+DimPlot(pbmc, reduction = "pca") + NoLegend() #shows a PCA plot of PC1 and PC2 
+```
+
+According to the PCA plot, there is 3 distinct clusters along PC1 and PC2. 
+
+A heatmap can help explore the primary sources of heterogeneity in a dataset and can help chose which PCs to use for further downstream analysis. 
+
+```{r}
+DimHeatmap(pbmc, dims = 1, cells = 500, balanced = TRUE) #generate a heatmap looking at the first PC
+```
+
+```{r}
+DimHeatmap(pbmc, dims = 1:15, cells = 500, balanced = TRUE) #generate heat maps looking at all the PCs 
+```
+
+Cells and features are ordered according to their PCA scores. Setting cells to a number plots the ‘extreme' on both ends of the spectrum, dramatically speeds plotting for large datasets. 
+
+## Determine the 'dimensionality' of the dataset  
+
+We need to cluster cells based upon their PCA scores, to overcome th noise from any single feature for the scRNA-seq data.  
+
+An elbow plot will rank each PC based upon the variance that is explained 
+
+```{r}
+ElbowPlot(pbmc) #generates an elbow plot
+```
+
+We see that around 9-10 PCs capture a majority of the variation in the data and thus we can focus only on those ones.  
+
+You can repeat downstream analyses with a different number of PCs to see if the results change or not. 
+
+## Cluster the cells 
+
+We want the distance metric that drives the clustering analysis to remain the same.  
+
+We first want to construct a k-nearest neighbor graph based upon euclidean distance in PCA space and refine the edge weights between any two cells based on the shared overlap in their local neighbors (Jaccard similarity). This is done through the FindNeighbors(). 
+
+We want to group cells together with the goal of optimizing the standard modularity function, which is done through FindClusters(). 
+
+```{r}
+pbmc <- FindNeighbors(pbmc, dims = 1:10) #k-nearest neighbor graph
+pbmc <- FindClusters(pbmc, resolution = 0.5) #cluster cells
+```
+
+```{r}
+# Look at cluster IDs of the first 5 cells
+head(Idents(pbmc), 5)
+```
+
+This shows the number of nodes, edges, as well as the first cluster IDs of the cells.  
+
+## Run non-linear dimensional reduction (UMAP/tSNE)
+
+Helps to learn the underlying structure in the dataset, in order to place similar cells together in low-dimensional space. 
+
+Cells that are grouped together within graph-based clusters determined above should co-localize on these dimension reduction plots 
+
+tSNE and UMAP are 2D visualizations that preserve local distances in the dataset but don't preserve the more global relationships. This means that you should avoid drawing biological conclusions solely on the basis of visualization techniques.  
+
+```{r}
+pbmc <- RunUMAP(pbmc, dims = 1:10) #conduct a UMAP analysis  
+
+DimPlot(pbmc, reduction = "umap") #visualize the UMAP data 
+```
+
+We can see that the dimensions cluster differently along UMAP_1 and UMAP_2, with the dimensions clustering in 4 distinct groups along UMAP_1.  
+
+You can save the plot using the following code (change the code to your specific directory): 
+
+```{r}
+#saveRDS(pbmc, file = "../output/pbmc_tutorial.rds")
+```
+
+
+## Finding differentially expressed features (cluster biomarkers) 
+
+FindAllMarkers() helps identify positive and negative markers of a single cluster compared to other cells. 
+
+```{r}
+# find all markers of cluster 2
+cluster2.markers <- FindMarkers(pbmc, ident.1 = 2)
+head(cluster2.markers, n = 5)
+```
+
+```{r}
+# find all markers distinguishing cluster 5 from clusters 0 and 3
+cluster5.markers <- FindMarkers(pbmc, ident.1 = 5, ident.2 = c(0, 3))
+head(cluster5.markers, n = 5)
+```
+
+```{r}
+# find markers for every cluster compared to all remaining cells, report only the positive
+# ones
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+```
+
+This displays the markers for each cluster in order.  
+
+```{r}
+cluster0.markers <- FindMarkers(pbmc, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE) #specify the test.use parameter, in this case using the ROC test to get the 'classification power' for any individual marker 
+```
+
+```{r}
+VlnPlot(pbmc, features = c("MS4A1", "CD79A")) #shows the expression probability across the clusters 
+```
+
+FeaturePlot() shows the expression on a tSNE or PCA plot. 
+
+RidgePlot(), CellScatter() or Dotplot() are other methods that can be used.  
+
+```{r}
+# you can plot raw counts as well
+VlnPlot(pbmc, features = c("NKG7", "PF4"), slot = "counts", log = TRUE)
+```
+
+```{r}
+FeaturePlot(pbmc, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A", "LYZ", "PPBP",
+    "CD8A")) #generates a feature plot
+```
+
+DoHeatmap() generates an expression heatmap for the given cells and features 
+
+```{r}
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend() #plotting a heatmap looking at the top 20 markers for each cluster 
+```
+
+
+## Assigning cell type identity to clusters  
+
+Cluster ID	Markers	Cell Type
+0	IL7R, CCR7	Naive CD4+ T
+1	CD14, LYZ	CD14+ Mono
+2	IL7R, S100A4	Memory CD4+
+3	MS4A1	B
+4	CD8A	CD8+ T
+5	FCGR3A, MS4A7	FCGR3A+ Mono
+6	GNLY, NKG7	NK
+7	FCER1A, CST3	DC
+8	PPBP	Platelet 
+
+
+```{r}
+new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T", "FCGR3A+ Mono",
+    "NK", "DC", "Platelet") #denote the cluster ideas 
+names(new.cluster.ids) <- levels(pbmc) #set the levels via the cluster ids 
+pbmc <- RenameIdents(pbmc, new.cluster.ids) #manipulate the idenity class via the cluster ids 
+DimPlot(pbmc, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend() #generate a plot
+```
+
+```{r}
+plot <- DimPlot(pbmc, reduction = "umap", label = TRUE, label.size = 4.5) + xlab("UMAP 1") + ylab("UMAP 2") +
+    theme(axis.title = element_text(size = 18), legend.text = element_text(size = 18)) + guides(colour = guide_legend(override.aes = list(size = 10))) #use ggplot2 to generate a similar figure to up above
+```
+
+We can see which Cell types are denoted by which color and where they are clustered along the UMAP. NK, CD8 T, Naive CD4 T, Memory CD4 T cluster together, B and platelets cluster separately, and CD14+ Mono, DC, FCGR3A+ Mc cluster together. There seems to be 3 groups that can be explored more in-depthly.  
+
+```{r}
+ggsave(filename = "pbmc3k_umap.jpg", height = 7, width = 12, plot = plot, quality = 50) #save the plot 
+saveRDS(pbmc, file = "pbmc3k_final.rds") #save the rds object 
+```
+
