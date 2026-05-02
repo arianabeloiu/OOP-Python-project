@@ -1,0 +1,599 @@
+---
+title: "RNA seq - parts 1 and 2"
+author: "Ariana Beloiu"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#make sure that all these packages are installed 
+library(limma)
+library(Glimma) 
+library(edgeR) 
+library(Mus.musculus)
+library(R.utils)
+library(RColorBrewer) 
+library(gplots) 
+library(RNAseq123) 
+library(tidyverse) 
+library("DESeq2") 
+library(ggplot2) 
+library(gplots)  
+library(ggrepel)
+```
+
+# Part 1 - RNA-seq analysis using limma, Glimma, and edgeR
+
+edgeR - used to import, organize, filter & normalize the data (essentially data wrangling)
+
+limma - utilizes its *vroom* method, linear modelling, and Bayes moderation to assess differential expression and perform gene set testing
+
+Glimma - enables interactive exploration of the results
+
+## Data packing
+
+### Reading in count-data
+
+When need to obtain the tar file from online and extract the relevant files from the archive
+
+```{r}
+url <- "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE63310&format=file" #set the url 
+
+utils::download.file(url, destfile="GSE63310_RAW.tar", mode="wb") #download the tar file from the url 
+utils::untar("GSE63310_RAW.tar", exdir = ".") #extract the contents from the tar file 
+
+files <- c("GSM1545535_10_6_5_11.txt", "GSM1545536_9_6_5_11.txt", "GSM1545538_purep53.txt",
+           "GSM1545539_JMS8-2.txt", "GSM1545540_JMS8-3.txt", "GSM1545541_JMS8-4.txt",
+           "GSM1545542_JMS8-5.txt", "GSM1545544_JMS9-P7c.txt", "GSM1545545_JMS9-P8c.txt") #denote the files that have been extracted from the tar file 
+
+for(i in paste(files, ".gz", sep=""))
+  R.utils::gunzip(i, overwrite=TRUE) #decompress all the g-zip files 
+```
+
+```{r}
+files <- c("GSM1545535_10_6_5_11.txt", "GSM1545536_9_6_5_11.txt", 
+   "GSM1545538_purep53.txt", "GSM1545539_JMS8-2.txt", 
+   "GSM1545540_JMS8-3.txt", "GSM1545541_JMS8-4.txt", 
+   "GSM1545542_JMS8-5.txt", "GSM1545544_JMS9-P7c.txt", 
+   "GSM1545545_JMS9-P8c.txt") #group the files together 
+read.delim(files[1], nrow=5) #read first 5 lines of the combined files 
+```
+
+edgeR package is being utilized to combine 9 text files into a matrix of counts, known as DGEList-object, with unique Entrez gene identifiers (IDs) and nine columns associated with the individual samples in the experiment
+
+```{r}
+x <- readDGE(files, columns=c(1,3)) #read & merge the text files looking at gene expression counts into an edgeR DEGlist 
+class(x) #gets the output of x 
+dim(x) #get the dimensions of the matrix 
+```
+
+### Organising sample information
+
+Sample-level information related to the experimental design needs to be processes so that it is associated with the columns of the count matrix. This should include the experimental variables, both biological & technical that could have an impact on expression levels.
+
+```{r}
+samplenames <- substring(colnames(x), 12, nchar(colnames(x))) #subset the data by excluding the first 12 characters 
+samplenames
+```
+
+```{r}
+colnames(x) <- samplenames #denote that the column names are the sample names 
+group <- as.factor(c("LP", "ML", "Basal", "Basal", "ML", "LP", 
+                     "Basal", "ML", "LP")) #create the group factor
+x$samples$group <- group #assign the group labels to the samples in the DGElist 
+lane <- as.factor(rep(c("L004","L006","L008"), c(3,4,2))) #create the sequence batch lane factor 
+x$samples$lane <- lane #assign the lane labels to the samples in the DGE list 
+x$samples #view the list 
+```
+
+### Organising gene annotations
+
+There is a second-level to the DGElist-object which stores the gene-level information associated with the rows of the counts matrix and needs to be assigned to the according gene id. The type of information that can be retrieved includes gene symbols, gene names, chromosome names and locations.
+
+```{r}
+geneid <- rownames(x) #denote the geneid 
+genes <- AnnotationDbi::select(Mus.musculus, keys=geneid, columns=c("SYMBOL", "TXCHROM"), keytype="ENTREZID") #map the geneids with the corresponding gene symbols and chromosome information 
+head(genes) #view the genes 
+```
+
+```{r}
+genes <- genes[!duplicated(genes$ENTREZID),] #keep only the first gene w/ duplicate annotation 
+```
+
+```{r}
+x$genes <- genes #add the genes to the DGElist 
+x #view the complete list 
+```
+
+By organizing gene annotation and sample information, it makes it easier process the data and analyze the data moving forward. 
+
+## Data pre-processing 
+
+### Transformation from the raw-scale 
+
+Transform the raw counts onto the scale that accounts for library size difference, utilizing counts per million and log<sub>2</sub>-counts per million. 
+
+```{r}
+cpm <- cpm(x) #transform data using counts per million 
+lcpm <- cpm(x, log=TRUE) #transform data using log2-counts per million 
+```
+
+```{r}
+L <- mean(x$samples$lib.size) * 1e-6 #calculate the average library size in millions 
+M <- median(x$samples$lib.size) * 1e-6 #calculate the median library size in millions 
+c(L, M) #print the mean + median 
+summary(lcpm) #print out a summary table of the lcpm transformations 
+``` 
+
+### Removing genes that are lowly expressed 
+
+```{r}
+table(rowSums(x$counts==0)==9) #create a table that identifies rows where every single sample has a count of 0 
+```
+
+```{r}
+keep.exprs <- filterByExpr(x, group=group) #filter the genes whilist keeping as many genes as possible w/ worthwhile counts
+x <- x[keep.exprs,, keep.lib.sizes=FALSE] #subset the DGElist and update the library sizes 
+dim(x) #print the dimensions 
+```
+
+```{r}
+lcpm.cutoff <- log2(10/M + 2/L) #determine the threshold for lowly expressed genes  
+nsamples <- ncol(x) #denote the samples 
+col <- brewer.pal(nsamples, "Paired") #color code the samples
+par(mfrow=c(1,2)) #set it so that two graphs are printed 
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="") #plot the first graph 
+title(main="A. Raw data", xlab="Log-cpm") #create a title 
+abline(v=lcpm.cutoff, lty=3) #add a vertical dotted line indicating where the lowly expressed genes 
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+} #add density plots for the samples 
+legend("topright", samplenames, text.col=col, bty="n") #add a legend 
+lcpm <- cpm(x, log=TRUE) #transform raw RNA-sequcing counts into log2-transformed counts per million 
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="") #create the second plot 
+title(main="B. Filtered data", xlab="Log-cpm") #create the title 
+abline(v=lcpm.cutoff, lty=3) #add a vertical dotted line indicating where the lowly expressed genes
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+} #add density plots for the samples
+legend("topright", samplenames, text.col=col, bty="n") #add a legend 
+```
+
+You can see from the filtered data that the distributions of the log-CPM values are similar across the entire experiment. This will make the distributions of the genes look more similar across samples, which ensures that the final results later on are due to genes that are expressed. 
+
+### Normalising gene expression distributions 
+
+External factors (that are not of biological interests) can impact sample prep or sequencing processing. (i.e. contamination)
+
+Normalization is required to ensure that expression distributions of each sample are similar across the entire experiment. 
+
+A boxplot or density plot can be utilized to determine whether any samples are dissimilar to others (as seen above).   
+
+The calcNormFactors() in the edgeR package normalizes the data via calculating a weighted mean of log-fold changes (also known as *M*-values) between the test sample and a reference. 
+
+The normalization factors are utilized as a scaling factor for the library sizes, and when looking at the DGEList-objects, are stored as below: 
+
+```{r}
+x <- calcNormFactors(x, method = "TMM") #normalize the data via trimming the mean of M-values (TMM)
+x$samples$norm.factors #how they are stored in the DGElist 
+```
+
+Duplicate & adjust the data so that the counts of the first sample are reduced to 5% of their original values and so that the second sample is inflated to be 5-times larger. This will better visualize the effects of normalization. 
+
+```{r}
+x2 <- x #creates an x2 object 
+x2$samples$norm.factors <- 1 #resets the normalization factors to one 
+x2$counts[,1] <- ceiling(x2$counts[,1]*0.05) #reduces the read counts for the first sample by 5%
+x2$counts[,2] <- x2$counts[,2]*5 #multiplies the read counts for te second sample by 5 
+```
+
+Let's look at the distribution of samples for unnormalized and normalized data (pre-normalization and post). 
+
+```{r}
+par(mfrow=c(1,2)) #make sure that both plots are shown side by side 
+lcpm <- cpm(x2, log=TRUE) #calculates the log2-transformed counts per million 
+boxplot(lcpm, las=2, col=col, main="") #create a boxplot of the lcpm samples 
+title(main="A. Example: Unnormalised data",ylab="Log-cpm") #add a title 
+x2 <- calcNormFactors(x2)  #normalize the data via trimming the mean of M-values (TMM) of x2
+x2$samples$norm.factors #print it out  
+lcpm <- cpm(x2, log=TRUE) #calculates the log2-transformed counts per million for the normalized data 
+boxplot(lcpm, las=2, col=col, main="") #generate a boxplot 
+title(main="B. Example: Normalised data",ylab="Log-cpm") #add a title 
+```
+
+We can see that first sample has a small TMM scaling factor of approximately 0.06 or so. After normalization, has a scaling factor of 6.08, as well as all samples roughly have the same median and distribution. This will make sure that the differences that we are looking at are actually existing, and not due to technological error or noise.  
+
+### Unsupervised clustering of samples 
+
+Multi-dimensional scaling (MDS) plot or similar can be utilized to examine gene expression analyses.  
+
+Shows similarities and dissimilarities between samples in an "unsupervised" manner  
+
+- Not having any pre-existing knowledge or target outcomes 
+
+This can allow you to see any trends, outliers or patterns in gene expression *before* running more formal tests. 
+
+Ideally, samples would cluster within the condition of interest and any sample that is outside of this can be identified and looked at deeper as to why it strays away from the rest of the data (look for sources of error or extra variation). Technical replicates should lie very close to one another, if true. 
+
+The limma package through the plotMDS(). 
+
+1st dimension represents the leading-fold-change that best separates the samples and explains the largest proportion of variation in the data. Each subsequent dimensions explain less variation and having a smaller effect on the data. 
+
+If samples cluster by a given factor in any of these dimensions, it suggests that the factor directly contributes to gene expression differences in these samples and thus is worth investigating further like via linear modeling. If not, as in factors that show little or no effect, they can be left out of downstream analysis. 
+
+```{r}
+lcpm <- cpm(x, log=TRUE) #calculates the log2-transformed counts per million
+par(mfrow=c(1,2)) #displays graphs side by side 
+col.group <- group #denote the group factor 
+levels(col.group) <-  brewer.pal(nlevels(col.group), "Set1") #assign a distinct color palette for different biological groups 
+col.group <- as.character(col.group) #converts group factor into a character vector 
+col.lane <- lane #denote the lane factor
+levels(col.lane) <-  brewer.pal(nlevels(col.lane), "Set2") #assign color scheme to different sequencing lanes/batches 
+col.lane <- as.character(col.lane) #converts lane factor into a character vector 
+plotMDS(lcpm, labels=group, col=col.group) #plot the MDS by the sample group 
+title(main="A. Sample groups") #add a title 
+
+plotMDS(lcpm, labels=lane, col=col.lane, dim=c(3,4)) #plot the MDS by sequencing lane 
+title(main="B. Sequencing lanes") #add a title 
+```
+
+The sample groups cluster significantly between dimensions 1 and 2, as you can identify distinct clusters along dimensions 1 and 2. We can see that there is a difference between basal and LP, as well as basal and ML over dimension 1. We see that samples do not over dimension 3 and 4, when looking at examining Sequencing lane, thus can be ignored for downstream analysis. It is expected that pairwise comparisons between the cell populations will result in a greater number of DE genes when comparing ML to LP. 
+
+The Glimma package also offers an option to have an interactive MDS plot, where multiple dimensions can be explored via the glMDSplot(). 
+
+It will generate a html page and will open if launch = TRUE. 
+
+When you click on the bars, it will change the pair of dimensions plotted in the MDS plot and hovering over individual points will reveal the sample. 
+
+```{r}
+glMDSPlot(lcpm, labels=paste(group, lane, sep="_"), 
+          groups=x$samples[,c(2,5)], launch=FALSE) #change launch = TRUE, to launch the interactive plot
+```
+
+## Differential expression analysis 
+
+### Creating a design matrix and contrasts 
+
+Our interest is to see which genes are expressed at different levels between the three cell populations profiled. We are assuming that the data is normally distributed when formatting the linear models. 
+
+We set up a design matrix looking at the cell population and sequencing lane (batch) information 
+
+```{r}
+design <- model.matrix(~0+group+lane) #set up the matrix model 
+colnames(design) <- gsub("group", "", colnames(design)) #denote the column names 
+design #print out the model 
+```
+
+Each sample is shown where they were sequenced and what type of cell they are. 
+
+We will then set up the design matrix by removing the intercept from the group, but leaving the second intercept from the lane. 
+
+This will model the contrasts in a more straight forward way in the absense of the group intercept. 
+
+To get the contrasts for pairwise comparisons between cell populations, you can use makeContrasts() in the limma package. 
+
+```{r}
+contr.matrix <- makeContrasts(
+   BasalvsLP = Basal-LP, 
+   BasalvsML = Basal - ML, 
+   LPvsML = LP - ML, 
+   levels = colnames(design)) #set up the contrasts by denoting how the samples are organized 
+contr.matrix #view how the matrix looks 
+```
+
+It displays which groups are the targets (1), which are the references (-1), and which can be ignored (0). 
+
+The experimental effects can be modelled using a random effect through the duplicateCorrelation() to estimate correlations and the lmFit() for linear modelling.  
+
+### Removing heteroscedascity from count data 
+
+For RNA-seq count data, variance is not independent of the mean, and this is still the case even after transforming to log-CPM values 
+
+In the limma package, linear modeling is carried out on the log-cpm values, which are assumed to be normally distributed. 
+
+The voom() estimates the mean-variance trend for log-counts and then assigns a weight to each observation based on its predicted variance.  
+
+On a DGEList-object, it will convert the raw counts to log-CPM values by automatically extracting library sizes and normalization factors from x. 
+
+```{r}
+par(mfrow=c(1,2)) #shows all the graphs 
+v <- voom(x, design, plot=TRUE) #generate a voom plot 
+v 
+vfit <- lmFit(v, design) #generate the linear model 
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix) #get the contrasts 
+efit <- eBayes(vfit) #apply the empirical bayes moderation to the linear model 
+plotSA(efit, main="Final model: Mean-variance trend") #plot the data 
+```
+
+The *voom*-plot shows a decreasing trend between the means and the variances. It shows the technical variation in the sequencing experiment and biological variation in the replicate samples from different cell populations. 
+
+Experiments with high biological variation have flatter trends, with variance values plateau at high expression values. 
+
+Experiments with low biological variation tend to have sharp decreasing trends.  
+
+It provides a visual check on the level of filtering performed upstream. 
+
+The plot to the left extracts residual variances from fitting linear models to log-CPM transformed data and then the variances are rescaled to quarter-root variances and plotted against the average log2 count for each gene. The red curve shows the estimated mean-variance trend used to compute the voom weights. 
+
+The plot to the right is created using the plotSA(), which plots the log2 residual standard deviations against the mean log-CPM values. The blue horizontal blue line is average log2 residual standard deviation estimated by the empirical Bayes algorithm.  
+The variance is no longer dependent on the mean expression level. 
+
+### Fitting linear models for comparisons of interest 
+
+lmFit and contrasts.fit functions are used to fit a separate model to the expression values for each gene. 
+
+### Examining the number of DE genes 
+
+```{r}
+summary(decideTests(efit)) #prints out a summary table of the DE genes across different experimental conditions 
+```
+
+A total of 9,598 DE genes are found between basal and ML  and a total of 5,652 DE genes are found between LP and ML. The larger numbers of DE genes observed for comparisons involving the basal population are consistent with our observations from the MDS plots. 
+
+Some studies require more than an adjusted *p*-value cut off. The treat method can be used to calculate *p*-values from empirical Bayes moderated *t*-statistics with a minimum log-fold-changes (log-FC) requirement.  
+
+```{r}
+tfit <- treat(vfit, lfc=1) #calculate the significance based on the minimum fold-change threshold 
+dt <- decideTests(tfit) #sort genes as a DE across multiple contrasts 
+summary(dt) #generate the summary table 
+```
+
+The number of differentially expressed genes are reduced to a total of 3,648 DE genes for basal versus LP, 3,834 DE genes for basal versus ML, and 414 DE genes for LP versus ML. 
+
+Genes that are DE = 0, Genes that are up-regulated = 1. Genes that are down-regulated = -1. 
+
+The write.fit() can be used to extract and write the results for all 3 comparisons. 
+
+```{r}
+de.common <- which(dt[,1]!=0 & dt[,2]!=0) #identify the indices that are significantly changed in both 
+length(de.common) #get the length 
+head(tfit$genes$SYMBOL[de.common], n=20) #get the important genes in the experiment  
+vennDiagram(dt[,1:2], circle.col=c("turquoise", "salmon")) #compare the relationships between BasalvsLp and BasalvsML using a venn diagram 
+```
+
+The number of shared genes that are DE in both Basal versus LP and Basal versus ML is 2782. 
+
+```{r}
+write.fit(tfit, dt, file="results.txt") #print the linear model + test results in a text file 
+```
+
+### Examine the individual DE genes from top to bottom 
+
+```{r}
+basal.vs.lp <- topTreat(tfit, coef=1, n=Inf) #extract the ranked list of genes from basal vs. lp
+basal.vs.ml <- topTreat(tfit, coef=2, n=Inf) #extract the ranked list of genes from basal vs. ml 
+head(basal.vs.lp) #print the 6 most significant genes from basal vs lp 
+head(basal.vs.ml) #print the 6 most significant genes from basal vs ml 
+```
+
+topTreat arranges genes from smallest to largest adjusted p-value with associated gene information, log-FC, average log-CPM, moderated t-stat, raw and adjusted p-value for each gene. 
+
+*Rasef* and *Cldn7* are the top DE genes for both the basal vs. LP and basal vs. ML.  
+
+### Useful graphical representations of differential expression results 
+
+```{r}
+plotMD(tfit, column=1, status=dt[,1], main=colnames(tfit)[1], 
+       xlim=c(-8,13)) #plot a mean-difference plot to compare the linear model fit against the average log-CPM   
+glMDPlot(tfit, coef=1, status=dt, main=colnames(tfit)[1],
+         side.main="ENTREZID", counts=lcpm, groups=group, launch=FALSE) #generates an interactive plot of the mean-difference plot, launch = TRUE will launch it to a different window 
+```
+
+You can look at the plot and look at the bio markers that distinguish the cell populations. The high p-value of *Clu* denotes it as a major marker. 
+
+A heatmap can be utilized to look at the expression of a sibset of genes and give insight into the expression of individuals groups and samples in the study. 
+
+```{r, fig.width=10, fig.height=12}
+basal.vs.lp.topgenes <- basal.vs.lp$ENTREZID[1:100] #denote the top 100 most significant genes from the basal vs. lp 
+i <- which(v$genes$ENTREZID %in% basal.vs.lp.topgenes) #find the indices of the top genes from the full gene list 
+mycol <- colorpanel(1000,"blue","white","red") #create a color palette for low expression = blue, medium expression = white, high expression = red  
+
+#create a heatmap 
+heatmap.2(lcpm[i,], scale="row", #normalize each gene to highlight the relative gene expression patterns 
+          labRow=v$genes$SYMBOL[i], #label each row with gene symbols corresponding to the selected genes 
+          labCol=group, #label the columns with the group names 
+          col=mycol, trace="none", #apply the color palette and remove the trace lines
+          density.info="none", #remove the density plot from the legend 
+          margin=c(3,3), lhei=c(2,10), #specify the margins 
+          dendrogram="column") #draw the dendrogram 
+```
+
+We can see that *Clu*, *Sdc1*, *Tspan8*, *Lcn2* are highly expressed in LP and ML and have low expression in basal. *Krt14*, *Kr5*, and *Tagln* are expressed highly in Basal and have expression in LP. This highlights distinct gene expression among basal and luminal cell identities. The heatmap correctly clusters samples by cell type and reorders the genes into blocks with similar expression patterns. From the heatmap, we observe that the expression of ML and LP samples are very similar for the top 100 DE genes between basal and LP. 
+
+# Part 2 - From Gene counts to differential expression via DESeq2  
+
+## Organizing the Data 
+
+```{r}
+counts <- read.csv("rna_counts_data.csv", row.names = 1) #load the count data 
+coldata <- read.csv("rna_map.csv", row.names = 1) #load the metadata  
+head(counts) #view the first few rows of the count data 
+head(coldata) #view the first few rows of the metadata 
+```
+
+```{r}
+count_matrix <- counts[, -1] #remove the length column from the count data 
+colnames(count_matrix) <- coldata$Sample.Name #ensure count columns match coldata Sample.Names 
+rownames(coldata) <- coldata$Sample.Name #ensure row names 
+```
+
+```{r}
+all(colnames(count_matrix) == rownames(metadata))  #check i the name of the columns in the count matrix is the same as the meta data file 
+```
+
+After wrangling the data, we can now proceed with the Differential Expression Analysis. 
+
+## Differential Expression Analysis 
+
+We need to create a DESeq data object for downstream analysis 
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = count_matrix,
+                               colData = coldata,
+                               design = ~ Condition) #create the deseq data set object 
+dds #investigate it 
+```
+
+The dimensions are 59251x22, 59251 genes and 22 samples. The row names denote the gene ids and it looks good to pre-filter some of the genes with low count. 
+
+### Pre-Filtering 
+
+There are two reasons as to why pre-filtering is useful: 
+
+- Removes rows in which there are very few reads and thus reduces the memory size of the dds object 
+- Increases the speed of the transformation and testing functions within DESeq2 
+
+It can also improve the visualizations, as features with no information for differential expression are not plotted 
+
+```{r}
+# filter any counts less than 10
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+dds
+```
+
+Now there are only 33165 genes left for 22 samples.  
+
+### Set Reference Factor 
+
+We want to make sure the level we are comparing against is truly the control 
+
+```{r}
+# set the reference to be the control
+dds$Condition <- relevel(dds$Condition,
+                         ref = 'WT') #wild type is the control
+```
+
+### Getting Normalized Counts  
+
+Normalized counts can be an ouput for downstream analysis. 
+
+```{r}
+# get normalized counts
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized = TRUE)
+```
+
+## Run Differential Expression 
+
+Results tables are generated using the function results, which extracts a results table with log2 fold changes, p values and adjusted p values.  
+
+```{r}
+dds <- DESeq(dds) #run the differential analysis
+res <- results(dds) #get the results table 
+res #print the results  
+summary(res) #get a summary table  
+```
+
+The table shows a comparison between 33,165 genes between the mutation and wild type (WT) cell lines. The structure of the dataset relies on the baseMean, which is the overall expression level of each gene across the 22 samples. Some show high expression like CYTB and others like TRNE show low expression. The log2FoldChange shows how much the IDH mutation impacts the gene, where negative values indicate gene supression compared to the wild type. IfcSE (standard error) depicts the variation in the data across the replicates. The p-value is denoted from the pvalue and the adjusted p-value is denoted from padj. If the padj values < 0.05, then it is considered statistically significant.  
+
+```{r}
+res05 <- results(dds, alpha=0.05) #gets the results where the p-value < 0.05 
+summary(res05)
+```
+
+We can also see the number of genes with an adjusted p-value < 0.05 
+
+```{r}
+sum(res$padj < 0.05, na.rm=TRUE) #get the number of genes where the p-adj < 0.05 
+```
+
+There are only 42 genes that have a  stronger statistical significance. 
+
+```{r}
+#uncomment the line below to write results to file, notice you need to specify the file path. 
+# write.csv(as.data.frame(res), file=deseq_results_file_path)
+```
+
+
+## Visualize the Results 
+
+We want to compare Mutant and Wild Type (The mutants are cancer cell lines with specific mutations and the wild type are
+the same cell line without the mutations.). 
+
+There are 2 things to consider: the lof2FC value and the adjusted p-value. 
+
+Benjamini-Hochberg (BH) adjustment: calculates for each gene an adjusted p value which answers the following question: if one called significant all genes with a p-value less than or equal to this gene’s p value threshold, what would be the fraction of false positives (the false discovery rate, FDR) among them (in the sense of the calculation outlined above)?  
+
+P-value below 10% = 0.1 is significant 
+
+```{r}
+# convert results data to basic dataframe
+data <- data.frame(res)
+head(data)
+```
+
+From this table, we see that TRNP gene is more expressed in the Mutant (0.047), with CYTB, ND6, ND5 and others being down regulated in the mutant (all have negative log2FoldChange values). However none of these genes are statistically significant because while the p-value for genes such as CYTB and ND5 is less than 0.05, the padj is not and this indicates no strong statistical significance.  
+
+### PCA plot 
+
+A PCA plot can be utilized to visualize the similarities from the genes. 
+
+```{r}
+rld <- rlog(dds) #log transform the data
+plotPCA(rld, intgroup = "Condition") #plots a simple PCA plot by condition 
+```
+
+We can see that PC1 explains 97% of the variance, while PC2 explains 1% of the variance. We can see two distinct clusters forming along PC1, albeit they both contain genes from the WT and Mutation.  
+
+### Basic Volcano Plot 
+
+A volcano plot is a type of scatter plot that shows statistical significance (P-value) vs. the magnitude of change (fold change).  
+
+#### Identify Up and Down Regulated Genes 
+
+```{r}
+# add an additional column that identifies a gene as unregulated, downregulated, or unchanged
+# note the choice of pvalue and log2FoldChange cutoff. 
+data <- data %>%
+  mutate(
+  Expression = case_when(log2FoldChange >= log(1) & padj <= 0.05 ~ "Up-regulated",
+  log2FoldChange <= -log(1) & padj <= 0.05 ~ "Down-regulated",
+  TRUE ~ "Unchanged")
+  )
+head(data)
+```
+
+We used 0.05 as the cutoff for both the log2fold change and padj. We can see that none of the expression is changed. 
+
+```{r}
+#get the top 10 most variable genes 
+top <- 10
+# we are getting the top 10 up and down regulated genes by filtering the column Up-regulated and Down-regulated and sorting by the adjusted p-value. 
+top_genes <- bind_rows(
+  data %>%
+  filter(Expression == 'Up-regulated') %>%
+  arrange(padj, desc(abs(log2FoldChange))) %>%
+  head(top),
+  data %>%
+  filter(Expression == 'Down-regulated') %>%
+  arrange(padj, desc(abs(log2FoldChange))) %>%
+  head(top)
+  )
+# create a datframe just holding the top 10 genes
+Top_Hits = head(arrange(data,pvalue),10)
+Top_Hits
+```
+
+From the table we can see which genes are being up-regulated and down-regulated (all of them are statistically significant as paj<0.05). FBXL16, ASTN1, and ARSJ are some genes that are being up-regulated, while XAF1 and S100A4 are some that are being down regulated. 
+
+A basic volcano plot can be utilized to visualize which genes are unchanged, upregulated and down-regulated. 
+
+```{r} 
+data$label <- rownames(data) #denote the label 
+p1 <- ggplot(data, aes(log2FoldChange, -log(pvalue,10))) + #-log10 conversion
+geom_point(aes(color = Expression), size = 2/5) +
+geom_hline(yintercept=-log10(0.05), linetype="dashed", linewidth = .4) +
+xlab(expression("log"[2]*"FC")) +
+ylab(expression("-log"[10]*"P-Value")) +
+scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + #set the color scale 
+xlim(-4.5, 4.5) +
+geom_text_repel(aes(label = label), size = 2.5) #create the volcano plot 
+p1 #print the plot 
+```
+
+Most genes are unchanged, but some are upregulated like BTBD3 while others are down-regulated like XAF1, similar to what was shown in the tables. 
